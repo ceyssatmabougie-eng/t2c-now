@@ -61,7 +61,7 @@ async function main() {
 
   // Start the server
   console.log('[init] Starting server...')
-  await runCommand('node', ['--env-file=.env', 'dist/server.js'])
+  await runCommand('node', ['dist/server.js'])
 }
 
 main().catch((error) => {
