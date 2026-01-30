@@ -12,7 +12,7 @@ import { dirname, join } from 'path'
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = dirname(__filename)
 
-const DB_PATH = join(__dirname, '../../../data/gtfs.sqlite')
+const DB_PATH = join(__dirname, '../data/gtfs.sqlite')
 
 async function runCommand(command: string, args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
