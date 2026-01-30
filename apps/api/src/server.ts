@@ -31,6 +31,11 @@ if (isProduction) {
 app.use(express.json())
 
 // API routes
+app.use('/api/health', healthRouter)
+app.use('/api/stops', stopsRouter)
+app.use('/api/rt', rtRouter)
+
+// Legacy routes (without /api prefix) for backwards compatibility
 app.use('/health', healthRouter)
 app.use('/stops', stopsRouter)
 app.use('/rt', rtRouter)
