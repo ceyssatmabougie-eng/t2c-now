@@ -384,7 +384,7 @@ async function fetchRtFeed(): Promise<void> {
     }
 
     // Sort dataByRouteStop arrays by departure time
-    for (const [key, updates] of dataByRouteStop) {
+    for (const [_key, updates] of dataByRouteStop) {
       updates.sort((a, b) => a.departureEpoch - b.departureEpoch)
     }
 

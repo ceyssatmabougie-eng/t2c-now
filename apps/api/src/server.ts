@@ -43,7 +43,7 @@ if (isProduction) {
     app.use(express.static(frontendPath))
 
     // SPA fallback - serve index.html for all non-API routes
-    app.get('*', (req, res) => {
+    app.get('*', (_req, res) => {
       res.sendFile(join(frontendPath, 'index.html'))
     })
 
