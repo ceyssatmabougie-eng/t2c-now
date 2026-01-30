@@ -81,40 +81,72 @@ export async function fetchStopsNear(
     return []
   }
 
-  // Get directions for each stop
+  // Get directions for each stop using separate queries
   const stopIds = stopsWithDistance.map(s => s.id)
 
-  const { data: directions } = await supabase
+  // Get stop_times for these stops
+  const { data: stopTimesData } = await supabase
     .from('stop_times')
-    .select(`
-      stop_id,
-      trips!inner(
-        trip_headsign,
-        routes!inner(route_short_name, route_long_name)
-      )
-    `)
+    .select('stop_id, trip_id')
     .in('stop_id', stopIds)
-    .not('trips.trip_headsign', 'is', null)
-    .limit(1000)
+    .limit(2000)
+
+  if (!stopTimesData || stopTimesData.length === 0) {
+    return stopsWithDistance.map(stop => ({
+      id: stop.id,
+      name: stop.name,
+      distance: Math.round(stop.distance),
+      directions: [],
+    }))
+  }
+
+  // Get unique trip IDs
+  const tripIds = [...new Set(stopTimesData.map(st => st.trip_id))]
+
+  // Get trips info
+  const { data: tripsData } = await supabase
+    .from('trips')
+    .select('trip_id, route_id, trip_headsign')
+    .in('trip_id', tripIds)
+    .not('trip_headsign', 'is', null)
+
+  if (!tripsData) {
+    return stopsWithDistance.map(stop => ({
+      id: stop.id,
+      name: stop.name,
+      distance: Math.round(stop.distance),
+      directions: [],
+    }))
+  }
+
+  // Get routes info
+  const routeIds = [...new Set(tripsData.map(t => t.route_id))]
+  const { data: routesData } = await supabase
+    .from('routes')
+    .select('route_id, route_short_name, route_long_name')
+    .in('route_id', routeIds)
+
+  // Build lookup maps
+  const tripsMap = new Map(tripsData.map(t => [t.trip_id, t]))
+  const routesMap = new Map(routesData?.map(r => [r.route_id, r]) || [])
 
   // Build directions map
   const directionsMap = new Map<string, StopDirection[]>()
 
-  if (directions) {
-    for (const row of directions) {
-      const trip = row.trips as { trip_headsign: string; routes: { route_short_name: string | null; route_long_name: string | null } }
-      if (!trip?.trip_headsign) continue
+  for (const st of stopTimesData) {
+    const trip = tripsMap.get(st.trip_id)
+    if (!trip?.trip_headsign) continue
 
-      const line = trip.routes?.route_short_name || trip.routes?.route_long_name || ''
-      const headsign = trip.trip_headsign
+    const route = routesMap.get(trip.route_id)
+    const line = route?.route_short_name || route?.route_long_name || ''
+    const headsign = trip.trip_headsign
 
-      const existing = directionsMap.get(row.stop_id) || []
-      const key = `${line}|${headsign}`
-      if (!existing.some(d => `${d.line}|${d.headsign}` === key)) {
-        existing.push({ line, headsign })
-      }
-      directionsMap.set(row.stop_id, existing)
+    const existing = directionsMap.get(st.stop_id) || []
+    const key = `${line}|${headsign}`
+    if (!existing.some(d => `${d.line}|${d.headsign}` === key)) {
+      existing.push({ line, headsign })
     }
+    directionsMap.set(st.stop_id, existing)
   }
 
   return stopsWithDistance.map(stop => ({
@@ -201,33 +233,46 @@ export async function fetchDirections(stopId: string): Promise<DirectionOption[]
     ? childStops.map(s => s.stop_id)
     : [stopId]
 
-  // Get directions for these stops
-  const { data, error } = await supabase
+  // Get stop_times for these stops
+  const { data: stopTimesData, error } = await supabase
     .from('stop_times')
-    .select(`
-      trips!inner(
-        route_id,
-        direction_id,
-        trip_headsign,
-        routes!inner(route_short_name, route_long_name)
-      )
-    `)
+    .select('trip_id')
     .in('stop_id', stopIds)
-    .not('trips.trip_headsign', 'is', null)
-    .limit(500)
+    .limit(1000)
 
   if (error) throw new Error(error.message)
-  if (!data) return []
+  if (!stopTimesData || stopTimesData.length === 0) return []
+
+  // Get unique trip IDs
+  const tripIds = [...new Set(stopTimesData.map(st => st.trip_id))]
+
+  // Get trips with headsigns
+  const { data: tripsData } = await supabase
+    .from('trips')
+    .select('trip_id, route_id, direction_id, trip_headsign')
+    .in('trip_id', tripIds)
+    .not('trip_headsign', 'is', null)
+
+  if (!tripsData || tripsData.length === 0) return []
+
+  // Get routes
+  const routeIds = [...new Set(tripsData.map(t => t.route_id))]
+  const { data: routesData } = await supabase
+    .from('routes')
+    .select('route_id, route_short_name, route_long_name')
+    .in('route_id', routeIds)
+
+  const routesMap = new Map(routesData?.map(r => [r.route_id, r]) || [])
 
   // Deduplicate directions
   const seen = new Set<string>()
   const directions: DirectionOption[] = []
 
-  for (const row of data) {
-    const trip = row.trips as { route_id: string; direction_id: number | null; trip_headsign: string; routes: { route_short_name: string | null; route_long_name: string | null } }
-    if (!trip?.trip_headsign) continue
+  for (const trip of tripsData) {
+    if (!trip.trip_headsign) continue
 
-    const line = trip.routes?.route_short_name || trip.routes?.route_long_name || ''
+    const route = routesMap.get(trip.route_id)
+    const line = route?.route_short_name || route?.route_long_name || ''
     const key = `${trip.route_id}|${trip.direction_id ?? ''}|${trip.trip_headsign}`
 
     if (!seen.has(key)) {
@@ -343,41 +388,43 @@ export async function fetchNextDepartures(
     return { stopId, directionId, departures: [] }
   }
 
-  // Build query for stop_times
-  let query = supabase
-    .from('stop_times')
-    .select(`
-      departure_time,
-      trips!inner(
-        trip_id,
-        service_id,
-        route_id,
-        direction_id,
-        trip_headsign
-      )
-    `)
-    .in('stop_id', stopIds)
-    .eq('trips.route_id', routeId)
-    .eq('trips.trip_headsign', headsign)
-    .order('departure_time')
-    .limit(200)
+  // Get trips matching our criteria
+  let tripsQuery = supabase
+    .from('trips')
+    .select('trip_id, service_id')
+    .eq('route_id', routeId)
+    .eq('trip_headsign', headsign)
+    .in('service_id', Array.from(activeServiceIds))
 
   if (directionIdNum !== null) {
-    query = query.eq('trips.direction_id', directionIdNum)
+    tripsQuery = tripsQuery.eq('direction_id', directionIdNum)
   }
 
-  const { data: stopTimes, error } = await query
+  const { data: tripsData, error: tripsError } = await tripsQuery
+
+  if (tripsError) throw new Error(tripsError.message)
+  if (!tripsData || tripsData.length === 0) {
+    return { stopId, directionId, departures: [] }
+  }
+
+  const tripIds = tripsData.map(t => t.trip_id)
+
+  // Get stop_times for these trips at our stops
+  const { data: stopTimes, error } = await supabase
+    .from('stop_times')
+    .select('departure_time, trip_id')
+    .in('stop_id', stopIds)
+    .in('trip_id', tripIds)
+    .order('departure_time')
+    .limit(200)
 
   if (error) throw new Error(error.message)
   if (!stopTimes) return { stopId, directionId, departures: [] }
 
-  // Filter by active service IDs and future departures
+  // Filter future departures
   const departures: Departure[] = []
 
   for (const st of stopTimes) {
-    const trip = st.trips as { trip_id: string; service_id: string; route_id: string; direction_id: number | null; trip_headsign: string }
-    if (!activeServiceIds.has(trip.service_id)) continue
-
     const depSeconds = timeToSeconds(st.departure_time)
     if (depSeconds <= nowSeconds) continue
 
