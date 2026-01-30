@@ -37,20 +37,21 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# Copy built files
+# Copy everything needed
 COPY --from=builder /app/package.json ./
 COPY --from=builder /app/apps/api ./apps/api
 COPY --from=builder /app/apps/web/dist ./apps/web/dist
 
-# Install production dependencies only
-RUN cd apps/api && npm install --omit=dev
+# Install all dependencies (including tsx for init script)
+RUN cd apps/api && npm install
 
 # Create data directory
 RUN mkdir -p /app/apps/api/data
 
 # Expose port
 ENV PORT=8080
+ENV NODE_ENV=production
 EXPOSE 8080
 
-# Start the server
-CMD ["node", "apps/api/dist/server.js"]
+# Use npm start which runs init-and-start.ts (downloads GTFS if needed)
+CMD ["npm", "start"]
