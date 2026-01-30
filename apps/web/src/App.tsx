@@ -17,7 +17,7 @@ import {
   createFavoriteId,
   type Favorite,
 } from './lib/favorites'
-import { getLineColor, shouldUseWhiteText } from './lib/lines'
+import { getLineColor, shouldUseWhiteText, isValidLine } from './lib/lines'
 import './App.css'
 
 interface SelectedStop {
@@ -530,9 +530,9 @@ function App() {
                       >
                         <div className="stop-info">
                           <span className="stop-name">{stop.name}</span>
-                          {stop.directions.length > 0 && (
+                          {stop.directions.filter(d => isValidLine(d.line)).length > 0 && (
                             <div className="stop-directions">
-                              {stop.directions.slice(0, 4).map((dir, idx) => {
+                              {stop.directions.filter(d => isValidLine(d.line)).slice(0, 4).map((dir, idx) => {
                                 const lineColor = getLineColor(dir.line)
                                 const textColor = shouldUseWhiteText(lineColor) ? '#ffffff' : '#000000'
                                 return (
@@ -547,8 +547,8 @@ function App() {
                                   </div>
                                 )
                               })}
-                              {stop.directions.length > 4 && (
-                                <span className="stop-directions-more">+{stop.directions.length - 4} autres</span>
+                              {stop.directions.filter(d => isValidLine(d.line)).length > 4 && (
+                                <span className="stop-directions-more">+{stop.directions.filter(d => isValidLine(d.line)).length - 4} autres</span>
                               )}
                             </div>
                           )}
@@ -590,9 +590,9 @@ function App() {
                 <p className="placeholder-text">Aucune direction disponible</p>
               )}
 
-              {directionsState.status === 'success' && directionsState.directions.length > 0 && (
+              {directionsState.status === 'success' && directionsState.directions.filter(d => isValidLine(d.line)).length > 0 && (
                 <ul className="directions-list">
-                  {directionsState.directions.map((direction) => {
+                  {directionsState.directions.filter(d => isValidLine(d.line)).map((direction) => {
                     const lineColor = getLineColor(direction.line)
                     const textColor = shouldUseWhiteText(lineColor) ? '#ffffff' : '#000000'
                     return (
