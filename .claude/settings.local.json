@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm dev)",
+      "Bash(cmd.exe /c \"cd /d c:\\\\Users\\\\Sango\\\\OneDrive\\\\Bureau\\\\Appli\\\\t2c-now\\\\apps\\\\api && npx tsx scripts/debug-rt.ts 2>&1\")",
+      "Bash(npx tsx:*)",
+      "Bash(npx:*)"
+    ]
+  }
+}

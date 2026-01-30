@@ -1,0 +1,30 @@
+{
+  "name": "@t2c-now/api",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "T2C Now - API Node",
+  "scripts": {
+    "dev": "tsx watch --env-file=.env src/server.ts",
+    "build": "tsc",
+    "start": "NODE_ENV=production npx tsx scripts/init-and-start.ts",
+    "start:simple": "NODE_ENV=production node dist/server.js",
+    "download:gtfs": "tsx scripts/download-gtfs.ts",
+    "import:gtfs": "tsx scripts/import-gtfs.ts",
+    "update:gtfs": "tsx scripts/download-gtfs.ts && tsx scripts/import-gtfs.ts"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.6.2",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "gtfs-realtime-bindings": "^1.1.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.5",
+    "tsx": "^4.19.2",
+    "typescript": "~5.6.3"
+  }
+}

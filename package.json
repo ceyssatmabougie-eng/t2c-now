@@ -1,0 +1,21 @@
+{
+  "name": "t2c-now",
+  "version": "0.0.1",
+  "private": true,
+  "description": "T2C Now - PWA monorepo",
+  "scripts": {
+    "dev": "concurrently -n web,api -c cyan,magenta \"npm run dev:web\" \"npm run dev:api\"",
+    "dev:web": "npm --prefix apps/web run dev",
+    "dev:api": "npm --prefix apps/api run dev",
+    "build": "npm --prefix apps/web run build && npm --prefix apps/api run build",
+    "start": "npm --prefix apps/api run start",
+    "update:gtfs": "npm --prefix apps/api run update:gtfs",
+    "import:gtfs": "npm --prefix apps/api run import:gtfs"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
