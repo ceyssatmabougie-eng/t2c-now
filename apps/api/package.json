@@ -6,7 +6,7 @@
   "description": "T2C Now - API Node",
   "scripts": {
     "dev": "tsx watch --env-file=.env src/server.ts",
-    "build": "tsc",
+    "build": "npx tsc",
     "start": "NODE_ENV=production npx tsx scripts/init-and-start.ts",
     "start:simple": "NODE_ENV=production node dist/server.js",
     "download:gtfs": "tsx scripts/download-gtfs.ts",
