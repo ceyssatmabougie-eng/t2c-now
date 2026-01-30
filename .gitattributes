@@ -1,2 +1,16 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Force LF for shell scripts and config files
+*.sh text eol=lf
+Dockerfile text eol=lf
+.dockerignore text eol=lf
+fly.toml text eol=lf
+
+# Binary files
+*.png binary
+*.ico binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
