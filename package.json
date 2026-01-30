@@ -7,6 +7,7 @@
     "dev": "concurrently -n web,api -c cyan,magenta \"npm run dev:web\" \"npm run dev:api\"",
     "dev:web": "npm --prefix apps/web run dev",
     "dev:api": "npm --prefix apps/api run dev",
+    "install:all": "npm install && npm --prefix apps/api install && npm --prefix apps/web install",
     "build": "npm --prefix apps/web run build && npm --prefix apps/api run build",
     "start": "npm --prefix apps/api run start",
     "update:gtfs": "npm --prefix apps/api run update:gtfs",
