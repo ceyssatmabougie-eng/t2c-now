@@ -1,0 +1,28 @@
+# Configuration Fly.io pour T2C Now
+# Docs: https://fly.io/docs/reference/configuration/
+
+app = "t2c-now"
+primary_region = "cdg"  # Paris (proche de Clermont-Ferrand)
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "8080"
+  GTFS_RT_URL = "https://proxy.transport.data.gouv.fr/resource/t2c-clermont-gtfs-rt-trip-update"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = false  # Ne pas mettre en pause !
+  auto_start_machines = true
+  min_machines_running = 1    # Toujours garder 1 machine active
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+
+[mounts]
+  source = "t2c_data"
+  destination = "/app/apps/api/data"
