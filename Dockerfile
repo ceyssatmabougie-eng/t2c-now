@@ -22,7 +22,6 @@ RUN cd apps/web && npm install
 
 # Copy source code
 COPY apps ./apps
-COPY tsconfig.json ./
 
 # Build frontend and backend
 RUN npm run build
@@ -45,6 +44,9 @@ COPY --from=builder /app/apps/web/dist ./apps/web/dist
 
 # Install production dependencies only
 RUN cd apps/api && npm install --omit=dev
+
+# Create data directory
+RUN mkdir -p /app/apps/api/data
 
 # Expose port
 ENV PORT=8080
