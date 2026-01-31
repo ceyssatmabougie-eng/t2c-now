@@ -1,6 +1,5 @@
 {
   "installCommand": "npm install --include=dev",
-  "buildCommand": "npm exec -- vite build",
   "outputDirectory": "dist",
   "framework": "vite",
   "rewrites": [
