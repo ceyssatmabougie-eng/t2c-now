@@ -233,29 +233,40 @@ export async function fetchDirections(stopId: string): Promise<DirectionOption[]
     ? childStops.map(s => s.stop_id)
     : [stopId]
 
-  // Get stop_times for these stops - limit to reduce query size
+  // Get stop_times for these stops
   const { data: stopTimesData, error } = await supabase
     .from('stop_times')
     .select('trip_id')
     .in('stop_id', stopIds)
-    .limit(200)
+    .limit(2000)
 
   if (error) throw new Error(error.message)
   if (!stopTimesData || stopTimesData.length === 0) return []
 
-  // Get unique trip IDs - limit to 50 to avoid URL too long
-  const tripIds = [...new Set(stopTimesData.map(st => st.trip_id))].slice(0, 50)
+  // Get unique trip IDs
+  const allTripIds = [...new Set(stopTimesData.map(st => st.trip_id))]
 
-  // Get trips with headsigns in batches if needed
-  const { data: tripsData } = await supabase
-    .from('trips')
-    .select('trip_id, route_id, direction_id, trip_headsign')
-    .in('trip_id', tripIds)
+  // Fetch trips in batches of 30 to avoid URL too long
+  const BATCH_SIZE = 30
+  const tripsWithHeadsign: Array<{trip_id: string; route_id: string; direction_id: number | null; trip_headsign: string}> = []
 
-  if (!tripsData || tripsData.length === 0) return []
+  for (let i = 0; i < allTripIds.length && tripsWithHeadsign.length < 100; i += BATCH_SIZE) {
+    const batch = allTripIds.slice(i, i + BATCH_SIZE)
+    const { data: batchTrips } = await supabase
+      .from('trips')
+      .select('trip_id, route_id, direction_id, trip_headsign')
+      .in('trip_id', batch)
 
-  // Filter trips with headsigns
-  const tripsWithHeadsign = tripsData.filter(t => t.trip_headsign)
+    if (batchTrips) {
+      for (const trip of batchTrips) {
+        if (trip.trip_headsign) {
+          tripsWithHeadsign.push(trip as typeof tripsWithHeadsign[0])
+        }
+      }
+    }
+  }
+
+  if (tripsWithHeadsign.length === 0) return []
 
   // Get routes
   const routeIds = [...new Set(tripsWithHeadsign.map(t => t.route_id))]
