@@ -296,25 +296,52 @@ export async function fetchDirections(stopId: string): Promise<DirectionOption[]
     ? childStops.map(s => s.stop_id)
     : [stopId]
 
-  // Get stop_times for these stops
-  const { data: stopTimesData, error } = await supabase
-    .from('stop_times')
-    .select('trip_id')
-    .in('stop_id', stopIds)
-    .limit(2000)
+  // Get ALL routes first
+  const { data: allRoutes } = await supabase
+    .from('routes')
+    .select('route_id, route_short_name, route_long_name')
 
-  if (error) throw new Error(error.message)
-  if (!stopTimesData || stopTimesData.length === 0) return []
+  if (!allRoutes || allRoutes.length === 0) return []
 
-  // Get unique trip IDs
-  const allTripIds = [...new Set(stopTimesData.map(st => st.trip_id))]
+  const routesMap = new Map(allRoutes.map(r => [r.route_id, r]))
 
-  // Fetch trips in batches of 30 to avoid URL too long
+  // Get stop_times to find which trips serve these stops
+  // Use multiple samples to get variety
+  const stopTimesPromises = stopIds.map(sid =>
+    supabase
+      .from('stop_times')
+      .select('trip_id')
+      .eq('stop_id', sid)
+      .limit(500)
+  )
+
+  const stopTimesResults = await Promise.all(stopTimesPromises)
+  const allTripIds = new Set<string>()
+
+  for (const result of stopTimesResults) {
+    if (result.data) {
+      for (const st of result.data) {
+        allTripIds.add(st.trip_id)
+      }
+    }
+  }
+
+  if (allTripIds.size === 0) return []
+
+  // Shuffle trip IDs to get variety
+  const tripIdsArray = [...allTripIds]
+  for (let i = tripIdsArray.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[tripIdsArray[i], tripIdsArray[j]] = [tripIdsArray[j], tripIdsArray[i]]
+  }
+
+  // Fetch trips in batches, collecting unique route/direction/headsign combinations
   const BATCH_SIZE = 30
-  const tripsWithHeadsign: Array<{trip_id: string; route_id: string; direction_id: number | null; trip_headsign: string}> = []
+  const seen = new Set<string>()
+  const directions: DirectionOption[] = []
 
-  for (let i = 0; i < allTripIds.length && tripsWithHeadsign.length < 100; i += BATCH_SIZE) {
-    const batch = allTripIds.slice(i, i + BATCH_SIZE)
+  for (let i = 0; i < tripIdsArray.length && directions.length < 50; i += BATCH_SIZE) {
+    const batch = tripIdsArray.slice(i, i + BATCH_SIZE)
     const { data: batchTrips } = await supabase
       .from('trips')
       .select('trip_id, route_id, direction_id, trip_headsign')
@@ -322,43 +349,25 @@ export async function fetchDirections(stopId: string): Promise<DirectionOption[]
 
     if (batchTrips) {
       for (const trip of batchTrips) {
-        if (trip.trip_headsign) {
-          tripsWithHeadsign.push(trip as typeof tripsWithHeadsign[0])
+        if (!trip.trip_headsign) continue
+
+        const route = routesMap.get(trip.route_id)
+        const line = route?.route_short_name || route?.route_long_name || ''
+        const key = `${trip.route_id}|${trip.direction_id ?? ''}|${trip.trip_headsign}`
+
+        if (!seen.has(key)) {
+          seen.add(key)
+          directions.push({
+            id: key,
+            headsign: trip.trip_headsign,
+            line,
+          })
         }
       }
     }
-  }
 
-  if (tripsWithHeadsign.length === 0) return []
-
-  // Get routes
-  const routeIds = [...new Set(tripsWithHeadsign.map(t => t.route_id))]
-  const { data: routesData } = await supabase
-    .from('routes')
-    .select('route_id, route_short_name, route_long_name')
-    .in('route_id', routeIds)
-
-  const routesMap = new Map(routesData?.map(r => [r.route_id, r]) || [])
-
-  // Deduplicate directions
-  const seen = new Set<string>()
-  const directions: DirectionOption[] = []
-
-  for (const trip of tripsWithHeadsign) {
-    if (!trip.trip_headsign) continue
-
-    const route = routesMap.get(trip.route_id)
-    const line = route?.route_short_name || route?.route_long_name || ''
-    const key = `${trip.route_id}|${trip.direction_id ?? ''}|${trip.trip_headsign}`
-
-    if (!seen.has(key)) {
-      seen.add(key)
-      directions.push({
-        id: key,
-        headsign: trip.trip_headsign,
-        line,
-      })
-    }
+    // If we have enough unique directions, stop early
+    if (directions.length >= 30) break
   }
 
   // Sort by line then headsign
