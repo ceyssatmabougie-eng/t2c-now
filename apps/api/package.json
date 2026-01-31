@@ -14,10 +14,12 @@
     "update:gtfs": "tsx scripts/download-gtfs.ts && tsx scripts/import-gtfs.ts"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.93.3",
     "better-sqlite3": "^12.6.2",
     "cors": "^2.8.5",
     "express": "^4.21.2",
-    "gtfs-realtime-bindings": "^1.1.1"
+    "gtfs-realtime-bindings": "^1.1.1",
+    "unzip-stream": "^0.3.4"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

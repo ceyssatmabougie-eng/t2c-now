@@ -1,4 +1,4 @@
-import type { VercelRequest, VercelResponse } from '@vercel/node'
+import type { Handler } from '@netlify/functions'
 import GtfsRealtimeBindings from 'gtfs-realtime-bindings'
 
 const GTFS_RT_URL = 'https://proxy.transport.data.gouv.fr/resource/t2c-clermont-gtfs-rt-trip-update'
@@ -13,14 +13,18 @@ interface TripUpdate {
   }>
 }
 
-export default async function handler(req: VercelRequest, res: VercelResponse) {
+export const handler: Handler = async (event) => {
   // CORS headers
-  res.setHeader('Access-Control-Allow-Origin', '*')
-  res.setHeader('Access-Control-Allow-Methods', 'GET')
-  res.setHeader('Cache-Control', 's-maxage=30, stale-while-revalidate=60')
+  const headers = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+    'Cache-Control': 's-maxage=30, stale-while-revalidate=60',
+    'Content-Type': 'application/json',
+  }
 
-  if (req.method === 'OPTIONS') {
-    return res.status(200).end()
+  if (event.httpMethod === 'OPTIONS') {
+    return { statusCode: 200, headers, body: '' }
   }
 
   try {
@@ -60,15 +64,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
-    return res.status(200).json({
-      timestamp: feed.header?.timestamp ? Number(feed.header.timestamp) : Date.now() / 1000,
-      tripUpdates
-    })
+    return {
+      statusCode: 200,
+      headers,
+      body: JSON.stringify({
+        timestamp: feed.header?.timestamp ? Number(feed.header.timestamp) : Date.now() / 1000,
+        tripUpdates
+      })
+    }
   } catch (error) {
     console.error('GTFS-RT error:', error)
-    return res.status(500).json({
-      error: 'Failed to fetch GTFS-RT data',
-      message: error instanceof Error ? error.message : 'Unknown error'
-    })
+    return {
+      statusCode: 500,
+      headers,
+      body: JSON.stringify({
+        error: 'Failed to fetch GTFS-RT data',
+        message: error instanceof Error ? error.message : 'Unknown error'
+      })
+    }
   }
 }
