@@ -163,17 +163,37 @@ export async function fetchStopsNear(
     }))
   }
 
-  // Get unique trip IDs - limit to avoid URL too long
-  const tripIds = [...new Set(stopTimesData.map(st => st.trip_id))].slice(0, 50)
+  // Get unique trip IDs
+  const allTripIds = [...new Set(stopTimesData.map(st => st.trip_id))]
 
-  // Get trips info
-  const { data: tripsData } = await supabase
-    .from('trips')
-    .select('trip_id, route_id, trip_headsign')
-    .in('trip_id', tripIds)
-    .not('trip_headsign', 'is', null)
+  // Get routes first
+  const { data: routesData } = await supabase
+    .from('routes')
+    .select('route_id, route_short_name, route_long_name')
 
-  if (!tripsData) {
+  const routesMap = new Map(routesData?.map(r => [r.route_id, r]) || [])
+
+  // Fetch trips in batches of 25 to avoid URL too long
+  const BATCH_SIZE = 25
+  const tripsMap = new Map<string, { trip_id: string; route_id: string; trip_headsign: string | null }>()
+
+  for (let i = 0; i < allTripIds.length && i < 100; i += BATCH_SIZE) {
+    const batch = allTripIds.slice(i, i + BATCH_SIZE)
+    const { data: batchTrips } = await supabase
+      .from('trips')
+      .select('trip_id, route_id, trip_headsign')
+      .in('trip_id', batch)
+
+    if (batchTrips) {
+      for (const trip of batchTrips) {
+        if (trip.trip_headsign) {
+          tripsMap.set(trip.trip_id, trip)
+        }
+      }
+    }
+  }
+
+  if (tripsMap.size === 0) {
     return stopsWithDistance.map(stop => ({
       id: stop.id,
       name: stop.name,
@@ -181,17 +201,6 @@ export async function fetchStopsNear(
       directions: [],
     }))
   }
-
-  // Get routes info
-  const routeIds = [...new Set(tripsData.map(t => t.route_id))]
-  const { data: routesData } = await supabase
-    .from('routes')
-    .select('route_id, route_short_name, route_long_name')
-    .in('route_id', routeIds)
-
-  // Build lookup maps
-  const tripsMap = new Map(tripsData.map(t => [t.trip_id, t]))
-  const routesMap = new Map(routesData?.map(r => [r.route_id, r]) || [])
 
   // Build directions map
   const directionsMap = new Map<string, StopDirection[]>()
