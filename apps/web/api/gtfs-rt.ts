@@ -1,0 +1,74 @@
+import type { VercelRequest, VercelResponse } from '@vercel/node'
+import GtfsRealtimeBindings from 'gtfs-realtime-bindings'
+
+const GTFS_RT_URL = 'https://proxy.transport.data.gouv.fr/resource/t2c-clermont-gtfs-rt-trip-update'
+
+interface TripUpdate {
+  tripId: string
+  routeId?: string
+  stopTimeUpdates: Array<{
+    stopId: string
+    arrival?: { delay: number; time?: number }
+    departure?: { delay: number; time?: number }
+  }>
+}
+
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // CORS headers
+  res.setHeader('Access-Control-Allow-Origin', '*')
+  res.setHeader('Access-Control-Allow-Methods', 'GET')
+  res.setHeader('Cache-Control', 's-maxage=30, stale-while-revalidate=60')
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end()
+  }
+
+  try {
+    const response = await fetch(GTFS_RT_URL)
+
+    if (!response.ok) {
+      throw new Error(`GTFS-RT fetch failed: ${response.status}`)
+    }
+
+    const buffer = await response.arrayBuffer()
+    const feed = GtfsRealtimeBindings.transit_realtime.FeedMessage.decode(
+      new Uint8Array(buffer)
+    )
+
+    const tripUpdates: TripUpdate[] = []
+
+    for (const entity of feed.entity) {
+      if (entity.tripUpdate) {
+        const tu = entity.tripUpdate
+        const stopTimeUpdates = (tu.stopTimeUpdate || []).map(stu => ({
+          stopId: stu.stopId || '',
+          arrival: stu.arrival ? {
+            delay: stu.arrival.delay || 0,
+            time: stu.arrival.time ? Number(stu.arrival.time) : undefined
+          } : undefined,
+          departure: stu.departure ? {
+            delay: stu.departure.delay || 0,
+            time: stu.departure.time ? Number(stu.departure.time) : undefined
+          } : undefined
+        }))
+
+        tripUpdates.push({
+          tripId: tu.trip?.tripId || '',
+          routeId: tu.trip?.routeId || undefined,
+          stopTimeUpdates
+        })
+      }
+    }
+
+    return res.status(200).json({
+      timestamp: feed.header?.timestamp ? Number(feed.header.timestamp) : Date.now() / 1000,
+      tripUpdates
+    })
+  } catch (error) {
+    console.error('GTFS-RT error:', error)
+    return res.status(500).json({
+      error: 'Failed to fetch GTFS-RT data',
+      message: error instanceof Error ? error.message : 'Unknown error'
+    })
+  }
+}

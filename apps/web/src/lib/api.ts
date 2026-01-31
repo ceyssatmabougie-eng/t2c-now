@@ -38,6 +38,69 @@ export interface StopSearchResult {
   parentId?: string
 }
 
+// GTFS-RT types
+interface GtfsRtStopTimeUpdate {
+  stopId: string
+  arrival?: { delay: number; time?: number }
+  departure?: { delay: number; time?: number }
+}
+
+interface GtfsRtTripUpdate {
+  tripId: string
+  routeId?: string
+  stopTimeUpdates: GtfsRtStopTimeUpdate[]
+}
+
+interface GtfsRtResponse {
+  timestamp: number
+  tripUpdates: GtfsRtTripUpdate[]
+}
+
+// Cache for GTFS-RT data (30 seconds)
+let gtfsRtCache: { data: GtfsRtResponse | null; timestamp: number } = { data: null, timestamp: 0 }
+const GTFS_RT_CACHE_TTL = 30000 // 30 seconds
+
+async function fetchGtfsRt(): Promise<GtfsRtResponse | null> {
+  const now = Date.now()
+
+  // Return cached data if still valid
+  if (gtfsRtCache.data && now - gtfsRtCache.timestamp < GTFS_RT_CACHE_TTL) {
+    return gtfsRtCache.data
+  }
+
+  try {
+    const response = await fetch('/api/gtfs-rt')
+    if (!response.ok) {
+      console.warn('GTFS-RT fetch failed:', response.status)
+      return gtfsRtCache.data // Return stale data if available
+    }
+
+    const data = await response.json() as GtfsRtResponse
+    gtfsRtCache = { data, timestamp: now }
+    return data
+  } catch (error) {
+    console.warn('GTFS-RT fetch error:', error)
+    return gtfsRtCache.data // Return stale data if available
+  }
+}
+
+function getRealtimeDelay(
+  gtfsRt: GtfsRtResponse | null,
+  tripId: string,
+  stopId: string
+): { delay: number; hasRealtime: boolean } {
+  if (!gtfsRt) return { delay: 0, hasRealtime: false }
+
+  const tripUpdate = gtfsRt.tripUpdates.find(tu => tu.tripId === tripId)
+  if (!tripUpdate) return { delay: 0, hasRealtime: false }
+
+  const stopUpdate = tripUpdate.stopTimeUpdates.find(stu => stu.stopId === stopId)
+  if (!stopUpdate) return { delay: 0, hasRealtime: false }
+
+  const delay = stopUpdate.departure?.delay ?? stopUpdate.arrival?.delay ?? 0
+  return { delay, hasRealtime: true }
+}
+
 // Haversine distance calculation
 function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371000 // Earth's radius in meters
@@ -347,6 +410,9 @@ export async function fetchNextDepartures(
   const headsign = headsignParts.join('|') // In case headsign contains |
   const directionIdNum = dirId !== '' ? parseInt(dirId, 10) : null
 
+  // Fetch GTFS-RT data in parallel with other queries
+  const gtfsRtPromise = fetchGtfsRt()
+
   // Resolve child stops if this is a parent station
   const { data: childStops } = await supabase
     .from('stops')
@@ -425,7 +491,7 @@ export async function fetchNextDepartures(
   // Get stop_times for these trips at our stops
   const { data: stopTimes, error } = await supabase
     .from('stop_times')
-    .select('departure_time, trip_id')
+    .select('departure_time, trip_id, stop_id')
     .in('stop_id', stopIds)
     .in('trip_id', tripIds)
     .order('departure_time')
@@ -434,24 +500,36 @@ export async function fetchNextDepartures(
   if (error) throw new Error(error.message)
   if (!stopTimes) return { stopId, directionId, departures: [] }
 
-  // Filter future departures
+  // Get GTFS-RT data
+  const gtfsRt = await gtfsRtPromise
+
+  // Filter future departures and apply realtime data
   const departures: Departure[] = []
 
   for (const st of stopTimes) {
-    const depSeconds = timeToSeconds(st.departure_time)
-    if (depSeconds <= nowSeconds) continue
+    const scheduledSeconds = timeToSeconds(st.departure_time)
 
-    const deltaMinutes = Math.round((depSeconds - nowSeconds) / 60)
+    // Get realtime delay if available
+    const { delay, hasRealtime } = getRealtimeDelay(gtfsRt, st.trip_id, st.stop_id)
+    const delaySeconds = delay // delay is in seconds from GTFS-RT
+
+    // Apply delay to get actual departure time
+    const actualSeconds = scheduledSeconds + delaySeconds
+
+    if (actualSeconds <= nowSeconds) continue
+
+    const deltaMinutes = Math.round((actualSeconds - nowSeconds) / 60)
     if (deltaMinutes < 0) continue
 
     const departureDate = new Date(now)
     departureDate.setHours(0, 0, 0, 0)
-    departureDate.setSeconds(depSeconds)
+    departureDate.setSeconds(actualSeconds)
 
     departures.push({
       minutes: deltaMinutes,
       time: formatTime(departureDate),
-      realtime: false,
+      realtime: hasRealtime,
+      delayMinutes: hasRealtime ? Math.round(delaySeconds / 60) : undefined,
     })
 
     if (departures.length >= limit * 2) break
