@@ -6,7 +6,7 @@
   "description": "T2C Now - Web PWA",
   "scripts": {
     "dev": "vite",
-    "build": "npx vite build",
+    "build": "npx vite@6.0.5 build",
     "preview": "vite preview"
   },
   "dependencies": {
