@@ -89,7 +89,7 @@ export async function fetchStopsNear(
     .from('stop_times')
     .select('stop_id, trip_id')
     .in('stop_id', stopIds)
-    .limit(2000)
+    .limit(500)
 
   if (!stopTimesData || stopTimesData.length === 0) {
     return stopsWithDistance.map(stop => ({
@@ -100,8 +100,8 @@ export async function fetchStopsNear(
     }))
   }
 
-  // Get unique trip IDs
-  const tripIds = [...new Set(stopTimesData.map(st => st.trip_id))]
+  // Get unique trip IDs - limit to avoid URL too long
+  const tripIds = [...new Set(stopTimesData.map(st => st.trip_id))].slice(0, 50)
 
   // Get trips info
   const { data: tripsData } = await supabase
@@ -233,30 +233,32 @@ export async function fetchDirections(stopId: string): Promise<DirectionOption[]
     ? childStops.map(s => s.stop_id)
     : [stopId]
 
-  // Get stop_times for these stops
+  // Get stop_times for these stops - limit to reduce query size
   const { data: stopTimesData, error } = await supabase
     .from('stop_times')
     .select('trip_id')
     .in('stop_id', stopIds)
-    .limit(1000)
+    .limit(200)
 
   if (error) throw new Error(error.message)
   if (!stopTimesData || stopTimesData.length === 0) return []
 
-  // Get unique trip IDs
-  const tripIds = [...new Set(stopTimesData.map(st => st.trip_id))]
+  // Get unique trip IDs - limit to 50 to avoid URL too long
+  const tripIds = [...new Set(stopTimesData.map(st => st.trip_id))].slice(0, 50)
 
-  // Get trips with headsigns
+  // Get trips with headsigns in batches if needed
   const { data: tripsData } = await supabase
     .from('trips')
     .select('trip_id, route_id, direction_id, trip_headsign')
     .in('trip_id', tripIds)
-    .not('trip_headsign', 'is', null)
 
   if (!tripsData || tripsData.length === 0) return []
 
+  // Filter trips with headsigns
+  const tripsWithHeadsign = tripsData.filter(t => t.trip_headsign)
+
   // Get routes
-  const routeIds = [...new Set(tripsData.map(t => t.route_id))]
+  const routeIds = [...new Set(tripsWithHeadsign.map(t => t.route_id))]
   const { data: routesData } = await supabase
     .from('routes')
     .select('route_id, route_short_name, route_long_name')
@@ -268,7 +270,7 @@ export async function fetchDirections(stopId: string): Promise<DirectionOption[]
   const seen = new Set<string>()
   const directions: DirectionOption[] = []
 
-  for (const trip of tripsData) {
+  for (const trip of tripsWithHeadsign) {
     if (!trip.trip_headsign) continue
 
     const route = routesMap.get(trip.route_id)
